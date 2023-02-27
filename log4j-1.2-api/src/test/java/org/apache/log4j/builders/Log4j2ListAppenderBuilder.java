@@ -34,7 +34,7 @@ import org.apache.log4j.config.PropertiesConfiguration;
 import org.apache.log4j.spi.Filter;
 import org.apache.log4j.xml.XmlConfiguration;
 import org.apache.logging.log4j.core.config.plugins.Plugin;
-import org.apache.logging.log4j.test.appender.ListAppender;
+import org.apache.logging.log4j.core.test.appender.ListAppender;
 import org.w3c.dom.Element;
 
 /**
@@ -78,13 +78,8 @@ public class Log4j2ListAppenderBuilder extends AbstractBuilder implements Append
     }
 
     private Appender createAppender(String name, Layout layout, Filter filter) {
-        final org.apache.logging.log4j.core.Layout<?> log4j2Layout;
-        if (layout instanceof LayoutWrapper) {
-            log4j2Layout = ((LayoutWrapper) layout).getLayout();
-        } else {
-            log4j2Layout = layout != null ? new LayoutAdapter(layout) : null;
-        }
-        return new AppenderWrapper(
+        final org.apache.logging.log4j.core.Layout<?> log4j2Layout = LayoutAdapter.adapt(layout);
+        return AppenderWrapper.adapt(
                 ListAppender.newBuilder()
                         .setName(name)
                         .setLayout(log4j2Layout)

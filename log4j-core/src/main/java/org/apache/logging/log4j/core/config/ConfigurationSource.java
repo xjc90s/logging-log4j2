@@ -14,7 +14,6 @@
  * See the license for the specific language governing permissions and
  * limitations under the license.
  */
-
 package org.apache.logging.log4j.core.config;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +23,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.JarURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -33,19 +33,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 
-import javax.net.ssl.HttpsURLConnection;
-
 import org.apache.logging.log4j.core.net.UrlConnectionFactory;
-import org.apache.logging.log4j.core.net.ssl.LaxHostnameVerifier;
-import org.apache.logging.log4j.core.net.ssl.SslConfiguration;
-import org.apache.logging.log4j.core.net.ssl.SslConfigurationFactory;
-import org.apache.logging.log4j.core.util.AuthorizationProvider;
 import org.apache.logging.log4j.core.util.FileUtils;
 import org.apache.logging.log4j.core.util.Loader;
 import org.apache.logging.log4j.core.util.Source;
 import org.apache.logging.log4j.util.Constants;
 import org.apache.logging.log4j.util.LoaderUtil;
-import org.apache.logging.log4j.util.PropertiesUtil;
 
 /**
  * Represents the source for the logging configuration.
@@ -61,7 +54,6 @@ public class ConfigurationSource {
      * ConfigurationSource to use with {@link org.apache.logging.log4j.core.config.composite.CompositeConfiguration}.
      */
     public static final ConfigurationSource COMPOSITE_SOURCE = new ConfigurationSource(Constants.EMPTY_BYTE_ARRAY, null, 0);
-    private static final String HTTPS = "https";
 
     private final InputStream stream;
     private volatile byte[] data;
@@ -209,15 +201,15 @@ public class ConfigurationSource {
     private boolean isFile() {
         return source == null ? false : source.getFile() != null;
     }
-    
+
     private boolean isURL() {
         return source == null ? false : source.getURI() != null;
     }
-    
+
     private boolean isLocation() {
         return source == null ? false : source.getLocation() != null;
     }
-    
+
     /**
      * Returns the configuration source URL, or {@code null} if this configuration source is based on a file or has
      * neither a file nor an URL.
@@ -337,17 +329,9 @@ public class ConfigurationSource {
             return null;
         }
         try {
-            URL url = configLocation.toURL();
-            URLConnection urlConnection = UrlConnectionFactory.createConnection(url);
-            InputStream is = urlConnection.getInputStream();
-            long lastModified = urlConnection.getLastModified();
-            return new ConfigurationSource(is, configLocation.toURL(), lastModified);
-        } catch (final FileNotFoundException ex) {
-            ConfigurationFactory.LOGGER.warn("Could not locate file {}", configLocation.toString());
+            return getConfigurationSource(configLocation.toURL());
         } catch (final MalformedURLException ex) {
             ConfigurationFactory.LOGGER.error("Invalid URL {}", configLocation.toString(), ex);
-        } catch (final Exception ex) {
-            ConfigurationFactory.LOGGER.error("Unable to access {}", configLocation.toString(), ex);
         }
         return null;
     }
@@ -368,22 +352,16 @@ public class ConfigurationSource {
 
     private static ConfigurationSource getConfigurationSource(URL url) {
         try {
-            URLConnection urlConnection = url.openConnection();
-            AuthorizationProvider provider = ConfigurationFactory.authorizationProvider(PropertiesUtil.getProperties());
-            provider.addAuthorization(urlConnection);
-            if (url.getProtocol().equals(HTTPS)) {
-                SslConfiguration sslConfiguration = SslConfigurationFactory.getSslConfiguration();
-                if (sslConfiguration != null) {
-                    ((HttpsURLConnection) urlConnection).setSSLSocketFactory(sslConfiguration.getSslSocketFactory());
-                    if (!sslConfiguration.isVerifyHostName()) {
-                        ((HttpsURLConnection) urlConnection).setHostnameVerifier(LaxHostnameVerifier.INSTANCE);
-                    }
-                }
-            }
             File file = FileUtils.fileFromUri(url.toURI());
+            URLConnection urlConnection = UrlConnectionFactory.createConnection(url);
             try {
                 if (file != null) {
                     return new ConfigurationSource(urlConnection.getInputStream(), FileUtils.fileFromUri(url.toURI()));
+                } else if (urlConnection instanceof JarURLConnection) {
+                    // Work around https://bugs.openjdk.java.net/browse/JDK-6956385.
+                    long lastModified = new File(((JarURLConnection)urlConnection).getJarFile().getName())
+                            .lastModified();
+                    return new ConfigurationSource(urlConnection.getInputStream(), url, lastModified);
                 } else {
                     return new ConfigurationSource(urlConnection.getInputStream(), url, urlConnection.getLastModified());
                 }

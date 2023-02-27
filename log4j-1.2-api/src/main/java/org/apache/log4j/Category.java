@@ -16,13 +16,18 @@
  */
 package org.apache.log4j;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.Map;
 import java.util.ResourceBundle;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentMap;
+import java.util.stream.Collectors;
 
+import org.apache.log4j.bridge.AppenderAdapter;
 import org.apache.log4j.bridge.AppenderWrapper;
+import org.apache.log4j.bridge.LogEventWrapper;
 import org.apache.log4j.helpers.AppenderAttachableImpl;
 import org.apache.log4j.helpers.NullEnumeration;
 import org.apache.log4j.legacy.core.CategoryUtil;
@@ -168,13 +173,10 @@ public class Category implements AppenderAttachable {
     protected Category(final LoggerContext context, final String name) {
         this.name = name;
         this.logger = context.getLogger(name);
-        this.repository = LogManager.getLoggerRepository();
-        // this.rendererMap = ((RendererSupport) repository).getRendererMap();
     }
 
     Category(final org.apache.logging.log4j.Logger logger) {
         this.logger = logger;
-        // rendererMap = ((RendererSupport) LogManager.getLoggerRepository()).getRendererMap();
     }
 
     /**
@@ -194,11 +196,17 @@ public class Category implements AppenderAttachable {
      */
     @Override
     public void addAppender(final Appender appender) {
-        if (aai == null) {
-            aai = new AppenderAttachableImpl();
-        }
-        aai.addAppender(appender);
         if (appender != null) {
+            if (LogManager.isLog4jCorePresent()) {
+                CategoryUtil.addAppender(logger, AppenderAdapter.adapt(appender));
+            } else {
+                synchronized (this) {
+                    if (aai == null) {
+                        aai = new AppenderAttachableImpl();
+                    }
+                    aai.addAppender(appender);
+                }
+            }
             repository.fireAddAppenderEvent(this, appender);
         }
     }
@@ -233,6 +241,10 @@ public class Category implements AppenderAttachable {
      * @param event the event to log.
      */
     public void callAppenders(final LoggingEvent event) {
+        if (LogManager.isLog4jCorePresent()) {
+            CategoryUtil.log(logger, new LogEventWrapper(event));
+            return;
+        }
         int writes = 0;
         for (Category c = this; c != null; c = c.parent) {
             // Protected against simultaneous call to addAppender, removeAppender,...
@@ -307,17 +319,28 @@ public class Category implements AppenderAttachable {
         }
     }
 
+    private static Message createMessage(Object message) {
+        if (message instanceof String) {
+            return new SimpleMessage((String) message);
+        }
+        if (message instanceof CharSequence) {
+            return new SimpleMessage((CharSequence) message);
+        }
+        if (message instanceof Map) {
+            return new MapMessage<>((Map<String, ?>) message);
+        }
+        if (message instanceof Message) {
+            return (Message) message;
+        }
+        return new ObjectMessage(message);
+    }
+
     public void forcedLog(final String fqcn, final Priority level, final Object message, final Throwable t) {
-        final org.apache.logging.log4j.Level lvl = org.apache.logging.log4j.Level.toLevel(level.toString());
+        final org.apache.logging.log4j.Level lvl = level.getVersion2Level();
+        final Message msg = createMessage(message);
         if (logger instanceof ExtendedLogger) {
-            @SuppressWarnings("unchecked")
-            final Message msg = message instanceof Message ? (Message) message
-                : message instanceof Map ? new MapMessage((Map) message) : new ObjectMessage(message);
             ((ExtendedLogger) logger).logMessage(fqcn, lvl, null, msg, t);
         } else {
-            final ObjectRenderer renderer = get(message.getClass());
-            final Message msg = message instanceof Message ? (Message) message
-                : renderer != null ? new RenderedMessage(renderer, message) : new ObjectMessage(message);
             logger.log(lvl, msg, t);
         }
     }
@@ -342,14 +365,23 @@ public class Category implements AppenderAttachable {
     }
 
     /**
-     * Get the appenders contained in this category as an {@link Enumeration}. If no appenders can be found, then a
-     * {@link NullEnumeration} is returned.
+     * Get all the Log4j 1.x appenders contained in this category as an
+     * {@link Enumeration}. Log4j 2.x appenders are omitted.
      *
      * @return Enumeration An enumeration of the appenders in this category.
      */
     @Override
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings("unchecked")
     public Enumeration getAllAppenders() {
+        if (LogManager.isLog4jCorePresent()) {
+            final Collection<org.apache.logging.log4j.core.Appender> appenders = CategoryUtil.getAppenders(logger)
+                    .values();
+            return Collections.enumeration(appenders.stream()
+                    // omit native Log4j 2.x appenders
+                    .filter(AppenderAdapter.Adapter.class::isInstance)
+                    .map(AppenderWrapper::adapt)
+                    .collect(Collectors.toSet()));
+        }
         return aai == null ? NullEnumeration.getInstance() : aai.getAllAppenders();
     }
 
@@ -361,14 +393,10 @@ public class Category implements AppenderAttachable {
      */
     @Override
     public Appender getAppender(final String name) {
-        Appender appender = aai != null ? aai.getAppender(name) : null;
-        if (appender == null && LogManager.isLog4jCorePresent()) {
-            final org.apache.logging.log4j.core.Appender coreAppender = CategoryUtil.getAppenders(logger).get(name);
-            if (coreAppender != null) {
-                addAppender(appender = new AppenderWrapper(coreAppender));
-            }
+        if (LogManager.isLog4jCorePresent()) {
+            return AppenderWrapper.adapt(CategoryUtil.getAppenders(logger).get(name));
         }
-        return appender;
+        return aai != null ? aai.getAppender(name) : null;
     }
 
     public Priority getChainedPriority() {
@@ -398,7 +426,7 @@ public class Category implements AppenderAttachable {
     }
 
     /**
-     * Gets the the {@link LoggerRepository} where this <code>Category</code> instance is attached.
+     * Gets the {@link LoggerRepository} where this <code>Category</code> instance is attached.
      *
      * @deprecated Please use {@link #getLoggerRepository()} instead.
      * @since 1.1
@@ -421,7 +449,7 @@ public class Category implements AppenderAttachable {
     }
 
     /**
-     * Gets the the {@link LoggerRepository} where this <code>Category</code> is attached.
+     * Gets the {@link LoggerRepository} where this <code>Category</code> is attached.
      *
      * @since 1.2
      */
@@ -443,8 +471,12 @@ public class Category implements AppenderAttachable {
             return null;
         }
         final ConcurrentMap<String, Logger> loggers = Hierarchy.getLoggersMap(loggerContext);
-        final Logger parentLogger = loggers.get(parent.getName());
-        return parentLogger == null ? new Category(parent) : parentLogger;
+        Category parentLogger = loggers.get(parent.getName());
+        if (parentLogger == null) {
+            parentLogger = new Category(parent);
+            parentLogger.setHierarchy(getLoggerRepository());
+        }
+        return parentLogger;
     }
 
     public final Level getPriority() {
@@ -502,7 +534,7 @@ public class Category implements AppenderAttachable {
     }
 
     public boolean isEnabledFor(final Priority level) {
-        return isEnabledFor(org.apache.logging.log4j.Level.toLevel(level.toString()));
+        return isEnabledFor(level.getVersion2Level());
     }
 
     public boolean isErrorEnabled() {
@@ -537,43 +569,25 @@ public class Category implements AppenderAttachable {
 
     public void log(final Priority priority, final Object message) {
         if (isEnabledFor(priority)) {
-            @SuppressWarnings("unchecked")
-            final Message msg = message instanceof Map ? new MapMessage((Map) message) : new ObjectMessage(message);
-            forcedLog(FQCN, priority, msg, null);
+            forcedLog(FQCN, priority, message, null);
         }
     }
 
     public void log(final Priority priority, final Object message, final Throwable t) {
         if (isEnabledFor(priority)) {
-            @SuppressWarnings("unchecked")
-            final Message msg = message instanceof Map ? new MapMessage((Map) message) : new ObjectMessage(message);
-            forcedLog(FQCN, priority, msg, t);
+            forcedLog(FQCN, priority, message, t);
         }
     }
 
     public void log(final String fqcn, final Priority priority, final Object message, final Throwable t) {
         if (isEnabledFor(priority)) {
-            final Message msg = new ObjectMessage(message);
-            forcedLog(fqcn, priority, msg, t);
+            forcedLog(fqcn, priority, message, t);
         }
     }
 
     void maybeLog(final String fqcn, final org.apache.logging.log4j.Level level, final Object message, final Throwable throwable) {
         if (logger.isEnabled(level)) {
-            final Message msg;
-            if (message instanceof String) {
-                msg = new SimpleMessage((String) message);
-            }
-            // SimpleMessage treats String and CharSequence differently, hence this else-if block.
-            else if (message instanceof CharSequence) {
-                msg = new SimpleMessage((CharSequence) message);
-            } else if (message instanceof Map) {
-                @SuppressWarnings("unchecked")
-                final Map<String, ?> map = (Map<String, ?>) message;
-                msg = new MapMessage<>(map);
-            } else {
-                msg = new ObjectMessage(message);
-            }
+            final Message msg = createMessage(message);
             if (logger instanceof ExtendedLogger) {
                 ((ExtendedLogger) logger).logMessage(fqcn, level, null, msg, throwable);
             } else {
@@ -668,17 +682,17 @@ public class Category implements AppenderAttachable {
     }
 
     public void setLevel(final Level level) {
-        setLevel(getLevelStr(level));
+        setLevel(level != null ? level.getVersion2Level() : null);
     }
 
-    private void setLevel(final String levelStr) {
+    private void setLevel(final org.apache.logging.log4j.Level level) {
         if (LogManager.isLog4jCorePresent()) {
-            CategoryUtil.setLevel(logger, org.apache.logging.log4j.Level.toLevel(levelStr));
+            CategoryUtil.setLevel(logger, level);
         }
     }
 
     public void setPriority(final Priority priority) {
-        setLevel(getLevelStr(priority));
+        setLevel(priority != null ? priority.getVersion2Level() : null);
     }
 
     public void setResourceBundle(final ResourceBundle bundle) {

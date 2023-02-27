@@ -1,10 +1,28 @@
+<!---
+ Licensed to the Apache Software Foundation (ASF) under one or more
+ contributor license agreements.  See the NOTICE file distributed with
+ this work for additional information regarding copyright ownership.
+ The ASF licenses this file to You under the Apache License, Version 2.0
+ (the "License"); you may not use this file except in compliance with
+ the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+
 # [Apache Log4j 2](https://logging.apache.org/log4j/2.x/)
 
 Apache Log4j 2 is an upgrade to Log4j that provides significant improvements over its predecessor, Log4j 1.x,
 and provides many of the improvements available in Logback while fixing some inherent problems in Logback's architecture.
 
 [![Maven Central](https://img.shields.io/maven-central/v/org.apache.logging.log4j/log4j-api.svg)](https://search.maven.org/artifact/org.apache.logging.log4j/log4j-api)
-[![GitHub Workflow Status (branch)](https://img.shields.io/github/workflow/status/apache/logging-log4j2/build/release-2.x)](https://github.com/apache/logging-log4j2/actions/workflows/build.yml)
+[![build (2.x)](https://img.shields.io/github/actions/workflow/status/apache/logging-log4j2/build.yml?branch=release-2.x&label=build%20%282.x%29)](https://github.com/apache/logging-log4j2/actions/workflows/build.yml)
+[![build (3.x)](https://img.shields.io/github/actions/workflow/status/apache/logging-log4j2/build.yml?branch=master&label=build%20%283.x%29)](https://github.com/apache/logging-log4j2/actions/workflows/build.yml)
 ![CodeQL](https://github.com/apache/logging-log4j2/actions/workflows/codeql-analysis.yml/badge.svg)
 
 ## Pull Requests on Github
@@ -17,7 +35,7 @@ judged to be non-trivial, you will be asked to actually signing a Contributor Li
 ## Usage
 
 Users should refer to [Maven, Ivy, Gradle, and SBT Artifacts](http://logging.apache.org/log4j/2.x/maven-artifacts.html)
-on the Log4j web site for instructions on how to include Log4j into their project using their chosen build tool.
+on the Log4j website for instructions on how to include Log4j into their project using their chosen build tool.
 
 Basic usage of the `Logger` API:
 
@@ -86,21 +104,15 @@ see [Snapshot builds](https://logging.apache.org/log4j/2.x/maven-artifacts.html#
 
 ## Issue Tracking
 
-Issues, bugs, and feature requests should be submitted to the
-[JIRA issue tracking system for this project](https://issues.apache.org/jira/browse/LOG4J2).
+Issues, bugs, and feature requests should be submitted to [the issue tracker](https://github.com/apache/logging-log4j2/issues).
 
-Pull request on GitHub are welcome, but please open a ticket in the JIRA issue tracker first, and mention the
-JIRA issue in the Pull Request.
+Pull requests on GitHub are welcome, but please open a ticket in the issue tracker first, and mention the issue in the pull request.
 
 ## Building From Source
 
-Log4j requires Apache Maven 3.x. To build from source and install to your local Maven repository, execute the following:
-
-```sh
-mvn install
-```
+See [the detailed build instructions](BUILDING.md) on how to build to the project and website from sources.
 
 ## Contributing
 
-We love contributions! Take a look at
-[our contributing page](https://github.com/apache/logging-log4j2/blob/master/CONTRIBUTING.md).
+We love contributions!
+Take a look at [our contributing page](CONTRIBUTING.md).

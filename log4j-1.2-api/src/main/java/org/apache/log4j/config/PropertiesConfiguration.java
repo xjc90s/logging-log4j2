@@ -36,12 +36,14 @@ import org.apache.log4j.PatternLayout;
 import org.apache.log4j.bridge.AppenderAdapter;
 import org.apache.log4j.bridge.AppenderWrapper;
 import org.apache.log4j.bridge.FilterAdapter;
+import org.apache.log4j.builders.BuilderManager;
 import org.apache.log4j.helpers.OptionConverter;
 import org.apache.log4j.spi.ErrorHandler;
 import org.apache.log4j.spi.Filter;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.core.Filter.Result;
 import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.rolling.TriggeringPolicy;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.ConfigurationSource;
 import org.apache.logging.log4j.core.config.LoggerConfig;
@@ -456,11 +458,7 @@ public class PropertiesConfiguration extends Log4j1Configuration {
             appender = buildAppender(appenderName, className, prefix, layoutPrefix, filterPrefix, props);
         } else {
             registry.put(appenderName, appender);
-            if (appender instanceof AppenderWrapper) {
-                addAppender(((AppenderWrapper) appender).getAppender());
-            } else {
-                addAppender(new AppenderAdapter(appender).getAdapter());
-            }
+            addAppender(AppenderAdapter.adapt(appender));
         }
         return appender;
     }
@@ -484,11 +482,7 @@ public class PropertiesConfiguration extends Log4j1Configuration {
         appender.addFilter(parseAppenderFilters(props, filterPrefix, appenderName));
         final String[] keys = new String[] {layoutPrefix};
         addProperties(appender, keys, props, prefix);
-        if (appender instanceof AppenderWrapper) {
-            addAppender(((AppenderWrapper) appender).getAppender());
-        } else {
-            addAppender(new AppenderAdapter(appender).getAdapter());
-        }
+        addAppender(AppenderAdapter.adapt(appender));
         registry.put(appenderName, appender);
         return appender;
     }
@@ -498,7 +492,7 @@ public class PropertiesConfiguration extends Log4j1Configuration {
         if (layoutClass == null) {
             return null;
         }
-        Layout layout = manager.parse(layoutClass, layoutPrefix, props, this);
+        Layout layout = manager.parse(layoutClass, layoutPrefix, props, this, BuilderManager.INVALID_LAYOUT);
         if (layout == null) {
             layout = buildLayout(layoutPrefix, layoutClass, appenderName, props);
         }
@@ -574,7 +568,7 @@ public class PropertiesConfiguration extends Log4j1Configuration {
             final String clazz = props.getProperty(entry.getKey());
             Filter filter = null;
             if (clazz != null) {
-                filter = manager.parse(clazz, entry.getKey(), props, this);
+                filter = manager.parse(clazz, entry.getKey(), props, this, BuilderManager.INVALID_FILTER);
                 if (filter == null) {
                     LOGGER.debug("Filter key: [{}] class: [{}] props: {}", entry.getKey(), clazz, entry.getValue());
                     filter = buildFilter(clazz, appenderName, entry.getValue());
@@ -595,6 +589,14 @@ public class PropertiesConfiguration extends Log4j1Configuration {
             propSetter.activate();
         }
         return filter;
+    }
+
+    public TriggeringPolicy parseTriggeringPolicy(final Properties props, final String policyPrefix) {
+        final String policyClass = OptionConverter.findAndSubst(policyPrefix, props);
+        if (policyClass == null) {
+            return null;
+        }
+        return manager.parse(policyClass, policyPrefix, props, this, null);
     }
 
     private static <T> T newInstanceOf(final String className, final String type) {

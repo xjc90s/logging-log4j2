@@ -44,6 +44,7 @@ import org.apache.log4j.spi.AppenderAttachable;
 import org.apache.log4j.spi.ErrorHandler;
 import org.apache.log4j.spi.Filter;
 import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.rolling.TriggeringPolicy;
 import org.apache.logging.log4j.core.Filter.Result;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.ConfigurationSource;
@@ -655,6 +656,12 @@ public class XmlConfiguration extends Log4j1Configuration {
         return null;
     }
 
+    public TriggeringPolicy parseTriggeringPolicy(Element policyElement) {
+        String className = subst(policyElement.getAttribute(CLASS_ATTR));
+        LOGGER.debug("Parsing triggering policy of class: \"{}\"", className);
+        return manager.parseTriggeringPolicy(className, policyElement, this);
+    }
+
     /**
      * Used internally to parse a level  element.
      */
@@ -675,24 +682,13 @@ public class XmlConfiguration extends Log4j1Configuration {
             }
         } else {
             String className = subst(element.getAttribute(CLASS_ATTR));
+            final Level level;
             if (EMPTY_STR.equals(className)) {
-                logger.setLevel(OptionConverter.convertLevel(priStr, org.apache.logging.log4j.Level.DEBUG));
+                level = OptionConverter.toLevel(priStr, DEFAULT_LEVEL);
             } else {
-                LOGGER.debug("Desired Level sub-class: [{}]", className);
-                try {
-                    Class<?> clazz = LoaderUtil.loadClass(className);
-                    Method toLevelMethod = clazz.getMethod("toLevel", ONE_STRING_PARAM);
-                    Level pri = (Level) toLevelMethod.invoke(null, priStr);
-                    logger.setLevel(OptionConverter.convertLevel(pri));
-                } catch (Exception e) {
-                    if (e instanceof InterruptedException || e instanceof InterruptedIOException) {
-                        Thread.currentThread().interrupt();
-                    }
-                    LOGGER.error("Could not create level [" + priStr +
-                            "]. Reported error follows.", e);
-                    return;
-                }
+                level = OptionConverter.toLevel(className, priStr, DEFAULT_LEVEL);
             }
+            logger.setLevel(level != null ? level.getVersion2Level() : null);
         }
         LOGGER.debug("{} level set to {}", catName,  logger.getLevel());
     }
@@ -774,11 +770,7 @@ public class XmlConfiguration extends Log4j1Configuration {
                 case APPENDER_TAG:
                     Appender appender = parseAppender(currentElement);
                     appenderMap.put(appender.getName(), appender);
-                    if (appender instanceof AppenderWrapper) {
-                        addAppender(((AppenderWrapper) appender).getAppender());
-                    } else {
-                        addAppender(new AppenderAdapter(appender).getAdapter());
-                    }
+                    addAppender(AppenderAdapter.adapt(appender));
                     break;
                 default:
                     quietParseUnrecognizedElement(null, currentElement, props);

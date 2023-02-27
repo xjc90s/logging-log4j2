@@ -39,6 +39,7 @@ import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.ConfigurationSource;
 import org.apache.logging.log4j.core.config.Configurator;
+import org.apache.logging.log4j.core.net.UrlConnectionFactory;
 import org.apache.logging.log4j.core.util.IOUtils;
 import org.w3c.dom.Element;
 
@@ -144,8 +145,7 @@ public class DOMConfigurator {
 
     public void doConfigure(final URL url, final LoggerRepository repository) {
         try {
-            final URLConnection connection = url.openConnection();
-            connection.setUseCaches(false); // Otherwise, a "jar:" URL file remains open after the stream is closed.
+            final URLConnection connection = UrlConnectionFactory.createConnection(url);
             try (InputStream inputStream = connection.getInputStream()) {
                 doConfigure(new ConfigurationSource(inputStream, url));
             }

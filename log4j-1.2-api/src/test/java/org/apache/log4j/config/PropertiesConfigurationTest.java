@@ -64,7 +64,7 @@ public class PropertiesConfigurationTest extends AbstractLog4j1ConfigurationTest
     @Override
     Configuration getConfiguration(String configResourcePrefix) throws URISyntaxException, IOException {
         final String configResource = configResourcePrefix + SUFFIX;
-        final InputStream inputStream = ClassLoader.getSystemResourceAsStream(configResource);
+        final InputStream inputStream = getResourceAsStream(configResource);
         final ConfigurationSource source = new ConfigurationSource(inputStream);
         final LoggerContext context = LoggerContext.getContext(false);
         final Configuration configuration = new PropertiesConfigurationFactory().getConfiguration(context, source);
@@ -125,10 +125,38 @@ public class PropertiesConfigurationTest extends AbstractLog4j1ConfigurationTest
             final Filterable filterable = (Filterable) appender;
             final CompositeFilter filter = (CompositeFilter) filterable.getFilter();
             final org.apache.logging.log4j.core.Filter[] filters = filter.getFiltersArray();
-            final LevelRangeFilter customFilterReal = (LevelRangeFilter) filters[0];
-            assertEquals(Level.ALL, customFilterReal.getMinLevel());
-            final LevelRangeFilter defaultFilter = (LevelRangeFilter) filters[1];
-            assertEquals(Level.TRACE, defaultFilter.getMinLevel());
+            final LevelRangeFilter filter1 = (LevelRangeFilter) filters[0];
+            // XXX: LOG4J2-2315
+            assertEquals(Level.OFF, filter1.getMinLevel());
+            assertEquals(Level.ALL, filter1.getMaxLevel());
+            final LevelRangeFilter filter2 = (LevelRangeFilter) filters[1];
+            assertEquals(Level.ERROR, filter2.getMinLevel());
+            assertEquals(Level.INFO, filter2.getMaxLevel());
+            final LevelRangeFilter filter3 = (LevelRangeFilter) filters[2];
+            assertEquals(Level.OFF, filter3.getMinLevel());
+            assertEquals(Level.ALL, filter3.getMaxLevel());
+
+            final ListAppender legacyAppender = (ListAppender) ((AppenderAdapter.Adapter) appender).getAppender();
+            final Logger logger = LogManager.getLogger(PropertiesConfigurationTest.class);
+
+            // deny
+            logger.trace("TRACE");
+            assertEquals(0, legacyAppender.getEvents().size());
+            // deny
+            logger.debug("DEBUG");
+            assertEquals(0, legacyAppender.getEvents().size());
+            // accept
+            logger.info("INFO");
+            assertEquals(1, legacyAppender.getEvents().size());
+            // accept
+            logger.warn("WARN");
+            assertEquals(2, legacyAppender.getEvents().size());
+            // accept
+            logger.error("ERROR");
+            assertEquals(3, legacyAppender.getEvents().size());
+            // deny
+            logger.fatal("FATAL");
+            assertEquals(3, legacyAppender.getEvents().size());
       }
     }
 
@@ -168,7 +196,7 @@ public class PropertiesConfigurationTest extends AbstractLog4j1ConfigurationTest
 
     @Test
     public void testProperties() throws Exception {
-        try (LoggerContext loggerContext = TestConfigurator.configure("target/test-classes/log4j1-file.properties")) {
+        try (LoggerContext loggerContext = TestConfigurator.configure("target/test-classes/log4j1-file-1.properties")) {
             final Logger logger = LogManager.getLogger("test");
             logger.debug("This is a test of the root logger");
             File file = new File("target/temp.A1");
@@ -301,7 +329,7 @@ public class PropertiesConfigurationTest extends AbstractLog4j1ConfigurationTest
             assertTrue(appender instanceof ConsoleAppender);
             final Layout<? extends Serializable> layout = appender.getLayout();
             assertTrue(layout instanceof PatternLayout);
-            assertEquals("%level - %m%n", ((PatternLayout)layout).getConversionPattern());
+            assertEquals("%v1Level - %m%n", ((PatternLayout)layout).getConversionPattern());
             final Filter filter = ((Filterable) appender).getFilter();
             assertTrue(filter instanceof DenyAllFilter);
             config.start();
@@ -317,4 +345,18 @@ public class PropertiesConfigurationTest extends AbstractLog4j1ConfigurationTest
         super.testGlobalThreshold();
     }
 
+    @Test
+    public void testEnhancedRollingFileAppender() throws Exception {
+        try (final LoggerContext ctx = configure("config-1.2/log4j-EnhancedRollingFileAppender")) {
+            final Configuration configuration = ctx.getConfiguration();
+            assertNotNull(configuration);
+            testEnhancedRollingFileAppender(configuration);
+        }
+    }
+
+    @Override
+    @Test
+    public void testLevelRangeFilter() throws Exception {
+        super.testLevelRangeFilter();
+    }
 }

@@ -49,6 +49,8 @@ import org.apache.logging.log4j.core.appender.ConsoleAppender;
 import org.apache.logging.log4j.core.async.AsyncLoggerConfig;
 import org.apache.logging.log4j.core.async.AsyncLoggerConfigDelegate;
 import org.apache.logging.log4j.core.async.AsyncLoggerConfigDisruptor;
+import org.apache.logging.log4j.core.async.AsyncWaitStrategyFactory;
+import org.apache.logging.log4j.core.async.AsyncWaitStrategyFactoryConfig;
 import org.apache.logging.log4j.core.config.arbiters.Arbiter;
 import org.apache.logging.log4j.core.config.arbiters.SelectArbiter;
 import org.apache.logging.log4j.core.config.plugins.util.PluginBuilder;
@@ -130,7 +132,7 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
     private ConcurrentMap<String, LoggerConfig> loggerConfigs = new ConcurrentHashMap<>();
     private List<CustomLevelConfig> customLevels = Collections.emptyList();
     private final ConcurrentMap<String, String> propertyMap = new ConcurrentHashMap<>();
-    private final StrLookup tempLookup = new Interpolator(propertyMap);
+    private final Interpolator tempLookup = new Interpolator(propertyMap);
     private final StrSubstitutor runtimeStrSubstitutor = new RuntimeStrSubstitutor(tempLookup);
     private final StrSubstitutor configurationStrSubstitutor = new ConfigurationStrSubstitutor(runtimeStrSubstitutor);
     private LoggerConfig root = new LoggerConfig();
@@ -139,6 +141,7 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
     private final ConfigurationScheduler configurationScheduler = new ConfigurationScheduler();
     private final WatchManager watchManager = new WatchManager(configurationScheduler);
     private AsyncLoggerConfigDisruptor asyncLoggerConfigDisruptor;
+    private AsyncWaitStrategyFactory asyncWaitStrategyFactory;
     private NanoClock nanoClock = new DummyNanoClock();
     private final WeakReference<LoggerContext> loggerContext;
 
@@ -147,6 +150,7 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
      */
     protected AbstractConfiguration(final LoggerContext loggerContext, final ConfigurationSource configurationSource) {
         this.loggerContext = new WeakReference<>(loggerContext);
+        tempLookup.setLoggerContext(loggerContext);
         // The loggerContext is null for the NullConfiguration class.
         // this.loggerContext = new WeakReference(Objects.requireNonNull(loggerContext, "loggerContext is null"));
         this.configurationSource = Objects.requireNonNull(configurationSource, "configurationSource is null");
@@ -207,9 +211,14 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
         // lazily instantiate only when requested by AsyncLoggers:
         // loading AsyncLoggerConfigDisruptor requires LMAX Disruptor jar on classpath
         if (asyncLoggerConfigDisruptor == null) {
-            asyncLoggerConfigDisruptor = new AsyncLoggerConfigDisruptor();
+            asyncLoggerConfigDisruptor = new AsyncLoggerConfigDisruptor(asyncWaitStrategyFactory);
         }
         return asyncLoggerConfigDisruptor;
+    }
+
+    @Override
+    public AsyncWaitStrategyFactory getAsyncWaitStrategyFactory() {
+        return asyncWaitStrategyFactory;
     }
 
     /**
@@ -285,7 +294,7 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
         }
     }
 
-	/**
+    /**
      * Start the configuration.
      */
     @Override
@@ -628,6 +637,9 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
             createConfiguration(first, null);
             if (first.getObject() != null) {
                 StrLookup lookup = (StrLookup) first.getObject();
+                if (lookup instanceof LoggerContextAware) {
+                    ((LoggerContextAware) lookup).setLoggerContext(loggerContext.get());
+                }
                 runtimeStrSubstitutor.setVariableResolver(lookup);
                 configurationStrSubstitutor.setVariableResolver(lookup);
             }
@@ -635,6 +647,7 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
             final Map<String, String> map = this.getComponent(CONTEXT_PROPERTIES);
             final StrLookup lookup = map == null ? null : new PropertiesLookup(map);
             Interpolator interpolator = new Interpolator(lookup, pluginPackages);
+            interpolator.setLoggerContext(loggerContext.get());
             runtimeStrSubstitutor.setVariableResolver(interpolator);
             configurationStrSubstitutor.setVariableResolver(interpolator);
         }
@@ -679,6 +692,9 @@ public abstract class AbstractConfiguration extends AbstractFilterable implement
                 final List<CustomLevelConfig> copy = new ArrayList<>(customLevels);
                 copy.add(child.getObject(CustomLevelConfig.class));
                 customLevels = copy;
+            } else if (child.isInstanceOf(AsyncWaitStrategyFactoryConfig.class)) {
+                AsyncWaitStrategyFactoryConfig awsfc = child.getObject(AsyncWaitStrategyFactoryConfig.class);
+                asyncWaitStrategyFactory = awsfc.createWaitStrategyFactory();
             } else {
                 final List<String> expected = Arrays.asList("\"Appenders\"", "\"Loggers\"", "\"Properties\"",
                         "\"Scripts\"", "\"CustomLevels\"");
